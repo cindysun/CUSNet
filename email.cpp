@@ -1,9 +1,27 @@
-#include <windows.h>
 #include <stdio.h>
 #include <WinSock.h>
 #include <iostream>
+#include <stdlib.h>
+#include <windows.h>
+#include <time.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+
 using namespace std;
 #pragma  comment(lib, "ws2_32.lib")
+
+
+int g_msg_queue_id = 0;
+
+typedef struct _trap_message
+{
+    long msg_type;
+    unsigned char msg_text[128];
+}trap_message;
 
 struct Base64Date6
 {
@@ -21,10 +39,54 @@ int  OpenSocket       (struct sockaddr *addr);
 int main()
 {
   char EmailTo[]         = "cindypata@126.com";
-  char EmailContents[]   = "From: \"cindy\"<cindypata@126.com>\r\n"
-                           "To: \"pata\"<cindypata@126.com>\r\n"
-						   "Subject: 【提醒】传感器读数超出警报阈值\r\n\r\n"
-                           "请注意调试^^";
+  char EmailContents[1024];//   = "From: \"cindy\"<cindypata@126.com>\r\n"
+                           //"To: \"pata\"<cindypata@126.com>\r\n"
+			//			   "Subject: 【提醒】传感器读数超出警报阈值\r\n\r\n"
+                        //   "请注意调试^^";
+    int fd = -1;
+    key_t key;
+
+    fd = open("/home/yuliang/cunix/cindyunix/hw4_6a/msg_queue",O_CREAT,0660);
+    if (fd == -1)
+    {
+        printf("Open msg_queue file error!\n");
+        return -1;
+    }
+    close(fd);
+
+    key = ftok("/home/yuliang/cunix/cindyunix/hw4_6a/msg_queue",'t');
+    if (key == -1)
+    {
+        printf("init_module ftok error\n");
+        return -1;
+    }
+
+    if((g_msg_queue_id = msgget(key,IPC_CREAT|0660)) == -1)
+    {
+        printf("msgget failed!\n");
+        return -1;
+    }
+
+    printf("creat msg queue suceed,id = %d\n",g_msg_queue_id);
+
+    trap_message msg = {0};
+    int msg_len = 0;
+    while(1)
+    {
+        memset(&msg,0,sizeof(msg));
+        msg_len = msgrcv(g_msg_queue_id, &msg.msg_text, sizeof(msg.msg_text),0,IPC_NOWAIT);
+        if(msg_len<0)
+        {
+            sleep(3);
+            continue;
+        }
+        printf("%s\n",msg.msg_text);
+        sscanf(msg.msg_text,"%d[%d]<%d>",nodeid,data,timet);
+        memset(&EmailContents,0,sizeof(EmailContents));
+        sprintf(EmailContents,"From: \"cindy\"<cindypata@126.com>\r\nTo: \"pata\"<cindypata@126.com>\r\nSubject: 【提醒】传感器%d读数超出警报阈值\r\n\r\n数据为%d请注意调试^^",nodeid,data);
+        SendMail(EmailTo, EmailContents);
+        sleep(0);
+    }
   SendMail(EmailTo, EmailContents);
   getchar();
   return 0;
